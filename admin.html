@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Click Happens Bookings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+  /* Layout: single working column. Add-slot form on top, then one block per recording slot with its requests listed underneath. */
+  :root {
+    --bg: #F6F4EC; --panel: #FFFFFF; --fg: #141414; --muted: #5d5b52; --line: #D9D5C6;
+    --accent: #FFD60A; --accent-fg: #141414;
+    --ok: #0B6B2E; --ok-bg: #DDF3E3; --warn: #8A5A00; --warn-bg: #FFF0C2; --bad: #B00020; --bad-bg: #FBE0E4;
+    --display: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
+    --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141411; --panel: #1E1E1A; --fg: #F2EFE3; --muted: #A9A592; --line: #3A3930;
+      --ok: #7FD99A; --ok-bg: #173A22; --warn: #F2C24D; --warn-bg: #3B2E0B; --bad: #FF8A9B; --bad-bg: #44151D;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141411; --panel: #1E1E1A; --fg: #F2EFE3; --muted: #A9A592; --line: #3A3930;
+    --ok: #7FD99A; --ok-bg: #173A22; --warn: #F2C24D; --warn-bg: #3B2E0B; --bad: #FF8A9B; --bad-bg: #44151D;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); font: 400 16px/1.5 var(--body);
+    padding-block: 28px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  main { max-width: 860px; margin: 0 auto; display: grid; gap: 24px; }
+  h1 { font: 800 28px/1.1 var(--display); margin: 0; letter-spacing: -.01em; }
+  h2 { font: 800 19px/1.2 var(--display); margin: 0; }
+  .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 2px 0 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); align-items: end; }
+  label.f { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; }
+  input, select, textarea {
+    width: 100%; font: 400 15px/1.3 var(--body); color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
+  }
+  button { font: 600 14px/1 var(--body); border-radius: 8px; padding: 10px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+  button.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+  button.bad { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+  .slot { display: grid; gap: 14px; }
+  .slothead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .slottitle { font: 800 20px/1.15 var(--display); }
+  .meta { color: var(--muted); font-size: 14px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; border: 1px solid var(--line); }
+  .pill.accepted { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+  .pill.pending { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .pill.declined { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+  .pill.closed { background: var(--bg); color: var(--muted); }
+  .bookings { display: grid; gap: 10px; }
+  .booking { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 8px; min-width: 0; }
+  .booking.declined { opacity: .6; }
+  .bhead { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; justify-content: space-between; }
+  .bname { font-weight: 700; }
+  .btext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .blinks { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .slotactions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .msg { font-size: 14px; margin: 0; }
+  .msg.err { color: var(--bad); font-weight: 600; }
+  .empty { color: var(--muted); margin: 0; }
+  .signin { max-width: 420px; margin: 12vh auto 0; display: grid; gap: 14px; }
+  a { color: inherit; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="signin" class="panel signin" hidden>
+    <h1>Click Happens Bookings</h1>
+    <p class="sub">Admin only. Enter your email and I will send you a sign-in link.</p>
+    <label class="f" for="email">Email
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+    </label>
+    <button id="send" class="primary" type="button">Send sign-in link</button>
+    <p id="signmsg" class="msg" role="status"></p>
+  </section>
+
+  <div id="app" hidden>
+    <div class="top">
+      <div>
+        <h1>Click Happens Bookings</h1>
+        <p class="sub" id="who"></p>
+      </div>
+      <button id="signout" type="button">Sign out</button>
+    </div>
+
+    <section class="panel" aria-labelledby="addh">
+      <h2 id="addh" style="margin-bottom:12px">Add a recording slot</h2>
+      <div class="form">
+        <label class="f" for="when">Date and time (your local time)
+          <input id="when" type="datetime-local">
+        </label>
+        <label class="f" for="dur">Length
+          <select id="dur">
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60" selected>60 min</option>
+            <option value="90">90 min</option>
+          </select>
+        </label>
+        <label class="f" for="cap">Guest places
+          <select id="cap">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+          </select>
+        </label>
+        <label class="f" for="note">Note for guests (optional)
+          <input id="note" type="text" maxlength="200" placeholder="e.g. Episode 6">
+        </label>
+        <button id="add" class="primary" type="button">Add slot</button>
+      </div>
+      <p id="addmsg" class="msg" role="status" style="margin-top:10px"></p>
+    </section>
+
+    <p id="globalerr" class="msg err" role="alert" hidden></p>
+    <div id="list" style="display:grid;gap:18px"></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  var SUPABASE_URL = "https://qfowqqkvuciocitfaszs.supabase.co";
+  var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmb3dxcWt2dWNpb2NpdGZhc3pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MjI4ODgsImV4cCI6MjEwOTE5ODg4OH0.mC6Fp9UEzTDrcmjIBjhj2YdyHUWV-yavx1_3yMaN8bk";
+  var sb = supabase.createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fmt(iso) {
+    return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+  }
+  function showErr(t) { var e = $("globalerr"); e.textContent = t || ""; e.hidden = !t; }
+
+  /* ---------- auth ---------- */
+  function showSignin() { $("signin").hidden = false; $("app").hidden = true; }
+
+  $("send").addEventListener("click", function () {
+    var email = $("email").value.trim();
+    if (!email) { $("signmsg").textContent = "Enter your email first."; return; }
+    $("send").disabled = true;
+    sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } })
+      .then(function (r) {
+        $("send").disabled = false;
+        $("signmsg").textContent = r.error ? ("Could not send the link: " + r.error.message) : "Check your inbox for the sign-in link.";
+      });
+  });
+  $("signout").addEventListener("click", function () { sb.auth.signOut().then(showSignin); });
+
+  function start(session) {
+    if (!session) { showSignin(); return; }
+    $("signin").hidden = true;
+    sb.rpc("is_admin").then(function (r) {
+      if (r.error || r.data !== true) {
+        $("app").hidden = true; $("signin").hidden = false;
+        $("signmsg").textContent = "This account (" + (session.user.email || "unknown") + ") is not an admin. Sign out and use the admin email.";
+        return;
+      }
+      $("app").hidden = false;
+      $("who").textContent = "Signed in as " + session.user.email;
+      load();
+    });
+  }
+  sb.auth.getSession().then(function (r) { start(r.data.session); });
+  sb.auth.onAuthStateChange(function (ev, session) { if (ev === "SIGNED_IN" || ev === "SIGNED_OUT") start(session); });
+
+  /* ---------- add slot ---------- */
+  $("add").addEventListener("click", function () {
+    var v = $("when").value;
+    if (!v) { $("addmsg").textContent = "Choose a date and time."; return; }
+    var d = new Date(v);
+    if (isNaN(d) || d <= new Date()) { $("addmsg").textContent = "Pick a time in the future."; return; }
+    $("add").disabled = true;
+    sb.from("recording_slots").insert({
+      starts_at: d.toISOString(), duration_mins: parseInt($("dur").value, 10), capacity: parseInt($("cap").value, 10),
+      note: $("note").value.trim() || null
+    }).then(function (r) {
+      $("add").disabled = false;
+      if (r.error) { $("addmsg").textContent = "Could not add the slot: " + r.error.message; return; }
+      $("addmsg").textContent = "Slot added."; $("note").value = "";
+      load();
+    });
+  });
+
+  /* ---------- load + render ---------- */
+  function load() {
+    showErr("");
+    Promise.all([
+      sb.from("recording_slots").select("*").order("starts_at", { ascending: true }),
+      sb.from("bookings").select("*").order("created_at", { ascending: true })
+    ]).then(function (res) {
+      if (res[0].error || res[1].error) { showErr("Could not load: " + ((res[0].error || res[1].error).message)); return; }
+      render(res[0].data, res[1].data);
+    });
+  }
+
+  function setStatus(b, status) {
+    showErr("");
+    sb.from("bookings").update({ status: status }).eq("id", b.id).then(function (r) {
+      if (r.error) {
+        var m = r.error.message || "";
+        showErr(m.indexOf("slot_full") > -1 ? "That slot already has all its places taken, so this request cannot go back to pending or accepted." : "Could not update: " + m);
+        return;
+      }
+      load();
+    });
+  }
+  function toggleOpen(s) {
+    sb.from("recording_slots").update({ is_open: !s.is_open }).eq("id", s.id).then(function (r) { if (r.error) showErr(r.error.message); else load(); });
+  }
+  var pendingDelete = null;
+  function delSlot(s, btn) {
+    if (pendingDelete !== s.id) { pendingDelete = s.id; btn.textContent = "Click again to delete"; return; }
+    pendingDelete = null;
+    sb.from("recording_slots").delete().eq("id", s.id).then(function (r) { if (r.error) showErr(r.error.message); else load(); });
+  }
+
+  function render(slots, bookings) {
+    var list = $("list"); list.textContent = "";
+    if (!slots.length) { list.appendChild(el("p", "empty", "No slots yet. Add your first recording slot above.")); return; }
+    var now = new Date();
+    slots.forEach(function (s) {
+      var mine = bookings.filter(function (b) { return b.slot_id === s.id; });
+      var acc = mine.filter(function (b) { return b.status === "accepted"; }).length;
+      var pen = mine.filter(function (b) { return b.status === "pending"; }).length;
+      var past = new Date(s.starts_at) <= now;
+
+      var box = el("section", "panel slot");
+      var head = el("div", "slothead");
+      var left = el("div");
+      left.appendChild(el("div", "slottitle", fmt(s.starts_at)));
+      left.appendChild(el("div", "meta", s.duration_mins + " min" + (s.note ? " · " + s.note : "")));
+      head.appendChild(left);
+      var pills = el("div", "pills");
+      pills.appendChild(el("span", "pill accepted", acc + " accepted"));
+      pills.appendChild(el("span", "pill pending", pen + " pending"));
+      pills.appendChild(el("span", "pill", (s.capacity - acc - pen < 0 ? 0 : s.capacity - acc - pen) + " of " + s.capacity + " places free"));
+      if (past) pills.appendChild(el("span", "pill closed", "past"));
+      else if (!s.is_open) pills.appendChild(el("span", "pill closed", "closed to guests"));
+      head.appendChild(pills);
+      box.appendChild(head);
+
+      var wrap = el("div", "bookings");
+      if (!mine.length) wrap.appendChild(el("p", "empty", "No requests for this slot yet."));
+      mine.forEach(function (b) {
+        var card = el("div", "booking " + b.status);
+        var bh = el("div", "bhead");
+        var nm = el("span", "bname", b.name + (b.company ? " · " + b.company : ""));
+        bh.appendChild(nm);
+        bh.appendChild(el("span", "pill " + b.status, b.status));
+        card.appendChild(bh);
+        var contact = el("div", "meta");
+        var a = document.createElement("a"); a.href = "mailto:" + encodeURIComponent(b.email).replace(/%40/g, "@"); a.textContent = b.email;
+        contact.appendChild(a); contact.appendChild(document.createTextNode(" · requested " + fmt(b.created_at)));
+        card.appendChild(contact);
+        card.appendChild(el("p", "btext", b.topic));
+        if (b.links) card.appendChild(el("p", "blinks", "Links: " + b.links));
+        var act = el("div", "actions");
+        if (b.status !== "accepted") { var ab = el("button", "ok", "Accept"); ab.type = "button"; ab.addEventListener("click", function () { setStatus(b, "accepted"); }); act.appendChild(ab); }
+        if (b.status !== "declined") { var db = el("button", "bad", "Decline"); db.type = "button"; db.addEventListener("click", function () { setStatus(b, "declined"); }); act.appendChild(db); }
+        if (b.status !== "pending") { var pb = el("button", null, "Back to pending"); pb.type = "button"; pb.addEventListener("click", function () { setStatus(b, "pending"); }); act.appendChild(pb); }
+        card.appendChild(act);
+        wrap.appendChild(card);
+      });
+      box.appendChild(wrap);
+
+      var sa = el("div", "slotactions");
+      var tb = el("button", null, s.is_open ? "Close to new requests" : "Reopen"); tb.type = "button";
+      tb.addEventListener("click", function () { toggleOpen(s); });
+      var xb = el("button", "bad", "Delete slot"); xb.type = "button";
+      xb.addEventListener("click", function () { delSlot(s, xb); });
+      sa.appendChild(tb); sa.appendChild(xb);
+      box.appendChild(sa);
+      list.appendChild(box);
+    });
+  }
+})();
+</script>
+</body>
+</html>
