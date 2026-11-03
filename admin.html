@@ -79,6 +79,25 @@
   .empty { color: var(--muted); margin: 0; }
   .signin { max-width: 420px; margin: 12vh auto 0; display: grid; gap: 14px; }
   a { color: inherit; }
+  div.f { display: grid; gap: 4px; min-width: 0; }
+  .f > span { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .datebtn { width: 100%; text-align: left; background: var(--bg); font-weight: 500; font-size: 15px; padding: 9px 10px; }
+  .datebtn.set { color: var(--fg); font-weight: 600; }
+  .timesel { display: flex; align-items: center; gap: 6px; }
+  .timesel select { flex: 1; min-width: 0; }
+  .cal { margin-top: 14px; width: 100%; max-width: 330px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel); }
+  .calhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .calhead strong { font: 800 17px/1 var(--display); }
+  .calhead button { width: 36px; height: 36px; padding: 0; font-size: 18px; line-height: 1; }
+  .calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .calgrid .dow { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); padding: 4px 0; }
+  .calgrid button.day { position: relative; aspect-ratio: 1; padding: 0; min-width: 0; font-size: 14px; font-weight: 600; border-color: transparent; background: transparent; }
+  .calgrid button.day:hover:not(:disabled) { border-color: var(--fg); }
+  .calgrid button.day.today { border-color: var(--line); }
+  .calgrid button.day.sel { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .calgrid button.day.has::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--ok); }
+  .calgrid button.day:disabled { opacity: .3; cursor: not-allowed; }
+  .calkey { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -106,9 +125,18 @@
     <section class="panel" aria-labelledby="addh">
       <h2 id="addh" style="margin-bottom:12px">Add a recording slot</h2>
       <div class="form">
-        <label class="f" for="when">Date and time (your local time)
-          <input id="when" type="datetime-local">
-        </label>
+        <div class="f">
+          <span id="datelabel">Date</span>
+          <button id="datebtn" class="datebtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-labelledby="datelabel datebtn">Choose a date</button>
+        </div>
+        <div class="f">
+          <span id="timelabel">Time (your local time)</span>
+          <div class="timesel" role="group" aria-labelledby="timelabel">
+            <select id="hh" aria-label="Hour"></select>
+            <span aria-hidden="true">:</span>
+            <select id="mm" aria-label="Minutes"></select>
+          </div>
+        </div>
         <label class="f" for="dur">Length
           <select id="dur">
             <option value="30">30 min</option>
@@ -129,6 +157,7 @@
         </label>
         <button id="add" class="primary" type="button">Add slot</button>
       </div>
+      <div id="cal" class="cal" role="dialog" aria-label="Choose a date" hidden></div>
       <p id="addmsg" class="msg" role="status" style="margin-top:10px"></p>
     </section>
 
@@ -188,10 +217,73 @@
   sb.auth.onAuthStateChange(function (ev, session) { if (ev === "SIGNED_IN" || ev === "SIGNED_OUT") start(session); });
 
   /* ---------- add slot ---------- */
+  /* ---------- date + time picker ---------- */
+  var selDate = null;          // local midnight of the chosen day
+  var slotDays = {};           // "y-m-d" -> true for days that already have a slot
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var viewY = today.getFullYear(), viewM = today.getMonth();
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var DOW = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+  function key(d) { return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+
+  (function fillTime() {
+    var h = $("hh"), m = $("mm"), i, o;
+    for (i = 0; i < 24; i++) { o = document.createElement("option"); o.value = i; o.textContent = (i < 10 ? "0" : "") + i; h.appendChild(o); }
+    [0, 15, 30, 45].forEach(function (v) { o = document.createElement("option"); o.value = v; o.textContent = (v < 10 ? "0" : "") + v; m.appendChild(o); });
+    h.value = 14; m.value = 0;
+  })();
+
+  function buildCal() {
+    var cal = $("cal"); cal.textContent = "";
+    var head = el("div", "calhead");
+    var prev = el("button", null, "‹"); prev.type = "button"; prev.setAttribute("aria-label", "Previous month");
+    prev.disabled = (viewY === today.getFullYear() && viewM <= today.getMonth());
+    prev.addEventListener("click", function () { viewM--; if (viewM < 0) { viewM = 11; viewY--; } buildCal(); });
+    var next = el("button", null, "›"); next.type = "button"; next.setAttribute("aria-label", "Next month");
+    next.addEventListener("click", function () { viewM++; if (viewM > 11) { viewM = 0; viewY++; } buildCal(); });
+    head.appendChild(prev); head.appendChild(el("strong", null, MONTHS[viewM] + " " + viewY)); head.appendChild(next);
+    cal.appendChild(head);
+
+    var grid = el("div", "calgrid");
+    DOW.forEach(function (n) { grid.appendChild(el("div", "dow", n)); });
+    var first = new Date(viewY, viewM, 1);
+    var lead = (first.getDay() + 6) % 7;
+    var count = new Date(viewY, viewM + 1, 0).getDate();
+    for (var i = 0; i < lead; i++) grid.appendChild(el("div"));
+    for (var day = 1; day <= count; day++) {
+      (function (day) {
+        var d = new Date(viewY, viewM, day);
+        var cls = "day";
+        if (d.getTime() === today.getTime()) cls += " today";
+        if (selDate && d.getTime() === selDate.getTime()) cls += " sel";
+        if (slotDays[key(d)]) cls += " has";
+        var b = el("button", cls, String(day)); b.type = "button";
+        b.disabled = d < today;
+        b.setAttribute("aria-label", new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d) + (slotDays[key(d)] ? ", already has a slot" : ""));
+        if (selDate && d.getTime() === selDate.getTime()) b.setAttribute("aria-pressed", "true");
+        b.addEventListener("click", function () {
+          selDate = d;
+          $("datebtn").textContent = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d);
+          $("datebtn").classList.add("set");
+          closeCal(); $("datebtn").focus();
+        });
+        grid.appendChild(b);
+      })(day);
+    }
+    cal.appendChild(grid);
+    cal.appendChild(el("p", "calkey", "A green dot marks a day that already has a slot."));
+  }
+  function openCal() {
+    if (selDate) { viewY = selDate.getFullYear(); viewM = selDate.getMonth(); }
+    buildCal(); $("cal").hidden = false; $("datebtn").setAttribute("aria-expanded", "true");
+  }
+  function closeCal() { $("cal").hidden = true; $("datebtn").setAttribute("aria-expanded", "false"); }
+  $("datebtn").addEventListener("click", function () { if ($("cal").hidden) openCal(); else closeCal(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("cal").hidden) { closeCal(); $("datebtn").focus(); } });
+
   $("add").addEventListener("click", function () {
-    var v = $("when").value;
-    if (!v) { $("addmsg").textContent = "Choose a date and time."; return; }
-    var d = new Date(v);
+    if (!selDate) { $("addmsg").textContent = "Choose a date."; return; }
+    var d = new Date(selDate.getFullYear(), selDate.getMonth(), selDate.getDate(), parseInt($("hh").value, 10), parseInt($("mm").value, 10));
     if (isNaN(d) || d <= new Date()) { $("addmsg").textContent = "Pick a time in the future."; return; }
     $("add").disabled = true;
     sb.from("recording_slots").insert({
@@ -213,6 +305,9 @@
       sb.from("bookings").select("*").order("created_at", { ascending: true })
     ]).then(function (res) {
       if (res[0].error || res[1].error) { showErr("Could not load: " + ((res[0].error || res[1].error).message)); return; }
+      slotDays = {};
+      res[0].data.forEach(function (s) { slotDays[key(new Date(s.starts_at))] = true; });
+      if (!$("cal").hidden) buildCal();
       render(res[0].data, res[1].data);
     });
   }
